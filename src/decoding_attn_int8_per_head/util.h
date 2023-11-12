@@ -6,11 +6,11 @@
 
 #pragma once
 
-#include "decoding_attn_int8/decoding_int8.h"
+#include "decoding_attn_int8_per_head/decoding_int8ph.h"
 #include "tensor.h"
 
-inline void check_quantization_int8(const DecodingInt8Params &params, Tensor<half> *K, Tensor<half> *V,
-                                    Tensor<int> *cu_seq_k) {
+inline void check_quantization_int8ph(const DecodingInt8PHParams &params, Tensor<half> *K, Tensor<half> *V,
+                                      Tensor<int> *cu_seq_k) {
     size_t total_k = K->getShape()[0];
     size_t head_k = K->getShape()[1];
     size_t dim = K->getShape()[2];

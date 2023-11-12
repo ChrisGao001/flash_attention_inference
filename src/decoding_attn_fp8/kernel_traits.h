@@ -1,6 +1,6 @@
 // Copyright 2023. All Rights Reserved.
 // Author: Bruce-Lee-LY
-// Date: 21:14:13 on Tue, Oct 31, 2023
+// Date: 21:17:12 on Sun, Nov 12, 2023
 //
 // Description: kernel traits
 
@@ -9,7 +9,7 @@
 #include <cstddef>
 
 template <size_t HeadDim, size_t ThreadsPerBlock, size_t ThreadsPerGroup>
-struct DecodingKernelTraits {
+struct DecodingFP8KernelTraits {
     static constexpr size_t head_dim = HeadDim;
     static constexpr size_t threads_per_block = ThreadsPerBlock;
     static constexpr size_t threads_per_group = ThreadsPerGroup;

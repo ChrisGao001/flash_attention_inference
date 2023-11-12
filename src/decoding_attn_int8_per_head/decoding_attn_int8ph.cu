@@ -2,15 +2,15 @@
 // Author: Bruce-Lee-LY
 // Date: 22:33:18 on Tue, Nov 07, 2023
 //
-// Description: decoding attn int8
+// Description: decoding attn int8ph
 
-#include "decoding_attn_int8/static_switch.h"
-#include "decoding_attn_int8/util.h"
+#include "decoding_attn_int8_per_head/static_switch.h"
+#include "decoding_attn_int8_per_head/util.h"
 
-DecodingInt8Params set_mha_decoding_int8_fwd_params(Tensor<half> *Q, Tensor<half> *K, Tensor<half> *V, Tensor<half> *O,
-                                                    Tensor<int> *cu_seq_q, Tensor<int> *cu_seq_k, size_t max_seq_q,
-                                                    size_t max_seq_k, cudaStream_t stream, cudaDeviceProp *dev_prop,
-                                                    bool is_alibi) {
+DecodingInt8PHParams set_mha_decoding_int8ph_fwd_params(Tensor<half> *Q, Tensor<half> *K, Tensor<half> *V,
+                                                        Tensor<half> *O, Tensor<int> *cu_seq_q, Tensor<int> *cu_seq_k,
+                                                        size_t max_seq_q, size_t max_seq_k, cudaStream_t stream,
+                                                        cudaDeviceProp *dev_prop, bool is_alibi) {
     size_t head_q = Q->getShape()[1];
     size_t dim = Q->getShape()[2];
     size_t total_k = K->getShape()[0];
@@ -20,7 +20,7 @@ DecodingInt8Params set_mha_decoding_int8_fwd_params(Tensor<half> *Q, Tensor<half
     FAI_CHECK_LE(dim, 256);
     FAI_CHECK_EQ(head_q % head_k, 0);
 
-    DecodingInt8Params params;
+    DecodingInt8PHParams params;
 
     // Reset the parameters
     memset(&params, 0, sizeof(params));
@@ -81,20 +81,20 @@ DecodingInt8Params set_mha_decoding_int8_fwd_params(Tensor<half> *Q, Tensor<half
     return params;
 }
 
-void run_quantization_int8(const DecodingInt8Params &params) {
-    DECODING_INT8_FWD_HEADDIM_SWITCH(params.d, [&] { run_quantization_int8_<HeadDim>(params); });
+void run_quantization_int8ph(const DecodingInt8PHParams &params) {
+    DECODING_INT8PH_FWD_HEADDIM_SWITCH(params.d, [&] { run_quantization_int8ph_<HeadDim>(params); });
 }
 
-void run_mha_decoding_int8_fwd(const DecodingInt8Params &params) {
-    DECODING_INT8_FWD_HEADDIM_SWITCH(params.d, [&] { run_mha_decoding_int8_fwd_<HeadDim>(params); });
+void run_mha_decoding_int8ph_fwd(const DecodingInt8PHParams &params) {
+    DECODING_INT8PH_FWD_HEADDIM_SWITCH(params.d, [&] { run_mha_decoding_int8ph_fwd_<HeadDim>(params); });
 }
 
-void decoding_attn_int8(Tensor<half> *Q, Tensor<half> *K, Tensor<half> *V, Tensor<half> *O, Tensor<int> *cu_seq_q,
-                        Tensor<int> *cu_seq_k, size_t max_seq_q, size_t max_seq_k, bool is_causal, int num_splits,
-                        cudaStream_t stream, cudaDeviceProp *dev_prop, bool is_alibi) {
-    static DecodingInt8Params params = set_mha_decoding_int8_fwd_params(Q, K, V, O, cu_seq_q, cu_seq_k, max_seq_q,
-                                                                        max_seq_k, stream, dev_prop, is_alibi);
-    run_quantization_int8(params);
-    // check_quantization_int8(params, K, V, cu_seq_k);
-    run_mha_decoding_int8_fwd(params);
+void decoding_attn_int8ph(Tensor<half> *Q, Tensor<half> *K, Tensor<half> *V, Tensor<half> *O, Tensor<int> *cu_seq_q,
+                          Tensor<int> *cu_seq_k, size_t max_seq_q, size_t max_seq_k, bool is_causal, int num_splits,
+                          cudaStream_t stream, cudaDeviceProp *dev_prop, bool is_alibi) {
+    static DecodingInt8PHParams params = set_mha_decoding_int8ph_fwd_params(Q, K, V, O, cu_seq_q, cu_seq_k, max_seq_q,
+                                                                            max_seq_k, stream, dev_prop, is_alibi);
+    run_quantization_int8ph(params);
+    // check_quantization_int8ph(params, K, V, cu_seq_k);
+    run_mha_decoding_int8ph_fwd(params);
 }

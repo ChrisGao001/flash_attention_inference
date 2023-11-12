@@ -2,22 +2,22 @@
 // Author: Bruce-Lee-LY
 // Date: 22:33:18 on Tue, Nov 07, 2023
 //
-// Description: decoding int8 fwd kernel
+// Description: decoding int8ph fwd kernel
 
 #pragma once
 
-#include "decoding_attn_int8/block_info.h"
-#include "decoding_attn_int8/decoding_int8.h"
-#include "decoding_attn_int8/kernel_traits.h"
+#include "decoding_attn_int8_per_head/block_info.h"
+#include "decoding_attn_int8_per_head/decoding_int8ph.h"
+#include "decoding_attn_int8_per_head/kernel_traits.h"
 
 template <typename KernelTraits>
-__global__ void quantization_int8_kernel(const DecodingInt8Params params) {
-    const QuantizatioInt8BlockInfo binfo(params, blockIdx.x, blockIdx.y);
+__global__ void quantization_int8ph_kernel(const DecodingInt8PHParams params) {
+    const QuantizatioInt8PHBlockInfo binfo(params, blockIdx.x, blockIdx.y);
     if (binfo.s_k >= binfo.actual_seqlen_k) {
         return;
     }
 
-    constexpr size_t group_size = KernelTraits::group_size;
+    constexpr size_t threads_per_group = KernelTraits::threads_per_group;
 
     constexpr size_t warp_size = KernelTraits::warp_size;
 
@@ -36,8 +36,8 @@ __global__ void quantization_int8_kernel(const DecodingInt8Params params) {
 
     const size_t warp_id = threadIdx.x / warp_size;
     const size_t lane_id = threadIdx.x % warp_size;
-    const size_t group_id = lane_id / group_size;
-    const size_t group_lane_id = lane_id % group_size;
+    const size_t group_id = lane_id / threads_per_group;
+    const size_t group_lane_id = lane_id % threads_per_group;
 
 #pragma unroll
     for (size_t base_h_idx = warp_id * groups_per_warp; base_h_idx < params.h_k; base_h_idx += groups_per_block) {
@@ -54,12 +54,12 @@ __global__ void quantization_int8_kernel(const DecodingInt8Params params) {
         if (h_idx < params.h_k) {
 #pragma unroll
             for (size_t i = 0; i < thread_iters; ++i) {
-                *(int4 *)(&RK[i * thread_copy_elem_nums]) =
-                    *(int4 *)(&params.k_ptr[binfo.k_offset(params.k_row_stride, h_idx, params.k_head_stride,
-                                                           (i * group_size + group_lane_id) * thread_copy_elem_nums)]);
-                *(int4 *)(&RV[i * thread_copy_elem_nums]) =
-                    *(int4 *)(&params.v_ptr[binfo.k_offset(params.v_row_stride, h_idx, params.v_head_stride,
-                                                           (i * group_size + group_lane_id) * thread_copy_elem_nums)]);
+                *(int4 *)(&RK[i * thread_copy_elem_nums]) = *(int4 *)(&params.k_ptr[binfo.k_offset(
+                    params.k_row_stride, h_idx, params.k_head_stride,
+                    (i * threads_per_group + group_lane_id) * thread_copy_elem_nums)]);
+                *(int4 *)(&RV[i * thread_copy_elem_nums]) = *(int4 *)(&params.v_ptr[binfo.k_offset(
+                    params.v_row_stride, h_idx, params.v_head_stride,
+                    (i * threads_per_group + group_lane_id) * thread_copy_elem_nums)]);
             }
 
 #pragma unroll
@@ -70,7 +70,7 @@ __global__ void quantization_int8_kernel(const DecodingInt8Params params) {
         }
 
 #pragma unroll
-        for (size_t i = group_size / 2; i >= 1; i /= 2) {
+        for (size_t i = threads_per_group / 2; i >= 1; i /= 2) {
             k_scale = fmaxf(k_scale, __shfl_xor_sync(shfl_mask, k_scale, i));
             v_scale = fmaxf(v_scale, __shfl_xor_sync(shfl_mask, v_scale, i));
         }
@@ -89,32 +89,34 @@ __global__ void quantization_int8_kernel(const DecodingInt8Params params) {
 
 #pragma unroll
             for (size_t i = 0; i < thread_iters; ++i) {
-                *(int2 *)(&params
-                               .k_int8_ptr[binfo.k_offset(params.k_row_stride, h_idx, params.k_head_stride,
-                                                          (i * group_size + group_lane_id) * thread_copy_elem_nums)]) =
+                *(int2 *)(&params.k_int8_ptr[binfo.k_offset(
+                    params.k_row_stride, h_idx, params.k_head_stride,
+                    (i * threads_per_group + group_lane_id) * thread_copy_elem_nums)]) =
                     *(int2 *)(&RQK[i * thread_copy_elem_nums]);
-                *(int2 *)(&params
-                               .v_int8_ptr[binfo.k_offset(params.v_row_stride, h_idx, params.v_head_stride,
-                                                          (i * group_size + group_lane_id) * thread_copy_elem_nums)]) =
+                *(int2 *)(&params.v_int8_ptr[binfo.k_offset(
+                    params.v_row_stride, h_idx, params.v_head_stride,
+                    (i * threads_per_group + group_lane_id) * thread_copy_elem_nums)]) =
                     *(int2 *)(&RQV[i * thread_copy_elem_nums]);
             }
 
-            params.k_scale_ptr[binfo.k_scale_offset(params.h_k, h_idx)] = k_scale;
-            params.v_scale_ptr[binfo.k_scale_offset(params.h_k, h_idx)] = v_scale;
+            if (group_lane_id == 0) {
+                params.k_scale_ptr[binfo.k_scale_offset(params.h_k, h_idx)] = k_scale;
+                params.v_scale_ptr[binfo.k_scale_offset(params.h_k, h_idx)] = v_scale;
+            }
         }
     }
 }
 
 template <typename KernelTraits, bool IsAlibi>
-__global__ void mha_decoding_int8_fwd_kernel(const DecodingInt8Params params) {
-    const DecodingInt8BlockInfo binfo(params, blockIdx.x, blockIdx.y);
+__global__ void mha_decoding_int8ph_fwd_kernel(const DecodingInt8PHParams params) {
+    const DecodingInt8PHBlockInfo binfo(params, blockIdx.x, blockIdx.y);
     if (binfo.actual_seqlen_q != 1 || binfo.actual_seqlen_k == 0) {
         return;
     }
 
     constexpr size_t head_dim = KernelTraits::head_dim;
     constexpr size_t threads_per_block = KernelTraits::threads_per_block;
-    constexpr size_t group_size = KernelTraits::group_size;
+    constexpr size_t threads_per_group = KernelTraits::threads_per_group;
 
     constexpr size_t warp_size = KernelTraits::warp_size;
     constexpr size_t warps_per_block = KernelTraits::warps_per_block;
@@ -133,16 +135,17 @@ __global__ void mha_decoding_int8_fwd_kernel(const DecodingInt8Params params) {
 
     const size_t warp_id = threadIdx.x / warp_size;
     const size_t lane_id = threadIdx.x % warp_size;
-    const size_t group_id = lane_id / group_size;
-    const size_t group_lane_id = lane_id % group_size;
+    const size_t group_id = lane_id / threads_per_group;
+    const size_t group_lane_id = lane_id % threads_per_group;
 
     // S = Q * K^T
     half RQ[thread_elem_nums];
 
 #pragma unroll
     for (size_t i = 0; i < thread_q_iters; ++i) {
-        *(int4 *)(&RQ[i * thread_copy_q_elem_nums]) = *(int4 *)(&params.q_ptr[binfo.q_offset(
-            params.q_row_stride, params.q_head_stride, (i * group_size + group_lane_id) * thread_copy_q_elem_nums)]);
+        *(int4 *)(&RQ[i * thread_copy_q_elem_nums]) =
+            *(int4 *)(&params.q_ptr[binfo.q_offset(params.q_row_stride, params.q_head_stride,
+                                                   (i * threads_per_group + group_lane_id) * thread_copy_q_elem_nums)]);
     }
 
     extern __shared__ float S_smem[];
@@ -156,14 +159,12 @@ __global__ void mha_decoding_int8_fwd_kernel(const DecodingInt8Params params) {
         float RK_scale = 0.0;
 
         float tmp = 0.0;
-        if (seqlen_k >= binfo.actual_seqlen_k) {
-            memset(RQK, 0, sizeof(RQK));
-        } else {
+        if (seqlen_k < binfo.actual_seqlen_k) {
 #pragma unroll
             for (size_t i = 0; i < thread_k_iters; ++i) {
                 *(int4 *)(&RQK[i * thread_copy_k_elem_nums]) = *(int4 *)(&params.k_int8_ptr[binfo.k_offset(
                     seqlen_k, params.k_row_stride, params.k_head_stride,
-                    (i * group_size + group_lane_id) * thread_copy_k_elem_nums)]);
+                    (i * threads_per_group + group_lane_id) * thread_copy_k_elem_nums)]);
             }
 
             RK_scale = __half2float(params.k_scale_ptr[binfo.k_scale_offset(seqlen_k, params.h_k)]);
@@ -175,7 +176,7 @@ __global__ void mha_decoding_int8_fwd_kernel(const DecodingInt8Params params) {
         }
 
 #pragma unroll
-        for (size_t i = group_size / 2; i >= 1; i /= 2) {
+        for (size_t i = threads_per_group / 2; i >= 1; i /= 2) {
             tmp += __shfl_xor_sync(shfl_mask, tmp, i);
         }
 
@@ -270,7 +271,7 @@ __global__ void mha_decoding_int8_fwd_kernel(const DecodingInt8Params params) {
             for (size_t i = 0; i < thread_k_iters; ++i) {
                 *(int4 *)(&RQV[i * thread_copy_k_elem_nums]) = *(int4 *)(&params.v_int8_ptr[binfo.k_offset(
                     seqlen_k, params.v_row_stride, params.v_head_stride,
-                    (i * group_size + group_lane_id) * thread_copy_k_elem_nums)]);
+                    (i * threads_per_group + group_lane_id) * thread_copy_k_elem_nums)]);
             }
 
             float RV_scale = __half2float(params.v_scale_ptr[binfo.k_scale_offset(seqlen_k, params.h_k)]);
@@ -285,7 +286,7 @@ __global__ void mha_decoding_int8_fwd_kernel(const DecodingInt8Params params) {
 #pragma unroll
     for (size_t i = 0; i < thread_elem_nums; ++i) {
 #pragma unroll
-        for (size_t j = group_size; j <= warp_size / 2; j *= 2) {
+        for (size_t j = threads_per_group; j <= warp_size / 2; j *= 2) {
             RO[i] += __shfl_xor_sync(shfl_mask, RO[i], j);
         }
     }
@@ -299,12 +300,12 @@ __global__ void mha_decoding_int8_fwd_kernel(const DecodingInt8Params params) {
 
     __syncthreads();
 
-    if (lane_id < group_size) {
+    if (lane_id < threads_per_group) {
 #pragma unroll
         for (size_t i = 0; i < thread_k_iters; ++i) {
 #pragma unroll
             for (size_t j = 0; j < thread_copy_k_elem_nums; ++j) {
-                atomicAdd(S_smem + (i * group_size + lane_id) * thread_copy_k_elem_nums + j,
+                atomicAdd(S_smem + (i * threads_per_group + lane_id) * thread_copy_k_elem_nums + j,
                           RO[i * thread_copy_k_elem_nums + j]);
             }
         }

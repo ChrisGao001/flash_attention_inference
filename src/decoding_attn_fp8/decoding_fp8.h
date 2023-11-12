@@ -1,14 +1,15 @@
 // Copyright 2023. All Rights Reserved.
 // Author: Bruce-Lee-LY
-// Date: 22:33:18 on Tue, Nov 07, 2023
+// Date: 21:17:12 on Sun, Nov 12, 2023
 //
-// Description: decoding int8
+// Description: decoding fp8
 
 #pragma once
 
 #include "common.h"
 
-struct DecodingInt8Params {
+template <typename fp8_t>
+struct DecodingFP8Params {
     // The QKV matrices.
     half *__restrict__ q_ptr;
     half *__restrict__ k_ptr;
@@ -28,13 +29,9 @@ struct DecodingInt8Params {
     // different from nheads (query).
     int h_h_k_ratio;  // precompute h / h_k,
 
-    // Quantization per head: half -> int8
-    int8_t *__restrict__ k_int8_ptr;
-    int8_t *__restrict__ v_int8_ptr;
-
-    // Dequantization per head: int8 -> half
-    half *k_scale_ptr;
-    half *v_scale_ptr;
+    // Quantization: half -> fp8
+    fp8_t *__restrict__ k_fp8_ptr;
+    fp8_t *__restrict__ v_fp8_ptr;
 
     // The O matrix (output).
     half *__restrict__ o_ptr;
@@ -59,8 +56,5 @@ struct DecodingInt8Params {
     bool is_alibi;
 };
 
-template <size_t HeadDim>
-void run_quantization_int8_(const DecodingInt8Params &params);
-
-template <size_t HeadDim>
-void run_mha_decoding_int8_fwd_(const DecodingInt8Params &params);
+template <size_t HeadDim, typename fp8_t>
+void run_mha_decoding_fp8_fwd_(const DecodingFP8Params<fp8_t> &params);

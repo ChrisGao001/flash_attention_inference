@@ -1,6 +1,6 @@
 // Copyright 2023. All Rights Reserved.
 // Author: Bruce-Lee-LY
-// Date: 21:14:13 on Tue, Oct 31, 2023
+// Date: 22:33:18 on Tue, Nov 07, 2023
 //
 // Description: block info
 
@@ -8,9 +8,32 @@
 
 #include "cuda_runtime_api.h"
 
-struct DecodingBlockInfo {
+struct QuantizatioInt8PHBlockInfo {
     template <typename Params>
-    __device__ DecodingBlockInfo(const Params &params, const int bidb, const int bidh)
+    __device__ QuantizatioInt8PHBlockInfo(const Params &params, const int bidb, const int seqlen_k)
+        : b(bidb),
+          s_k(seqlen_k),
+          sum_s_k(params.cu_seqlens_k[b]),
+          actual_seqlen_k(params.cu_seqlens_k[b + 1] - sum_s_k) {}
+
+    inline __device__ size_t k_offset(const size_t row_stride, const size_t head_idx, const size_t head_stride,
+                                      const size_t dim_idx) const {
+        return static_cast<size_t>(sum_s_k + s_k) * row_stride + head_idx * head_stride + dim_idx;
+    }
+
+    inline __device__ size_t k_scale_offset(const int head_k, const size_t head_idx) const {
+        return static_cast<size_t>(sum_s_k + s_k) * head_k + head_idx;
+    }
+
+    const int b;
+    const int s_k;
+    const int sum_s_k;
+    const int actual_seqlen_k;
+};
+
+struct DecodingInt8PHBlockInfo {
+    template <typename Params>
+    __device__ DecodingInt8PHBlockInfo(const Params &params, const int bidb, const int bidh)
         : b(bidb),
           h(bidh),
           h_k(h / params.h_h_k_ratio),
@@ -28,6 +51,10 @@ struct DecodingBlockInfo {
     inline __device__ size_t k_offset(const size_t seqlen_k, const size_t row_stride, const size_t head_stride,
                                       const size_t dim_idx) const {
         return static_cast<size_t>(sum_s_k + seqlen_k) * row_stride + h_k * head_stride + dim_idx;
+    }
+
+    inline __device__ size_t k_scale_offset(const size_t seqlen_k, const int head_k) const {
+        return static_cast<size_t>(sum_s_k + seqlen_k) * head_k + h_k;
     }
 
     const int b;

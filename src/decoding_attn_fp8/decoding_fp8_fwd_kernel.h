@@ -1,18 +1,18 @@
 // Copyright 2023. All Rights Reserved.
 // Author: Bruce-Lee-LY
-// Date: 21:14:13 on Tue, Oct 31, 2023
+// Date: 21:17:12 on Sun, Nov 12, 2023
 //
-// Description: decoding fwd kernel
+// Description: decoding fp8 fwd kernel
 
 #pragma once
 
-#include "decoding_attn/block_info.h"
-#include "decoding_attn/decoding.h"
-#include "decoding_attn/kernel_traits.h"
+#include "decoding_attn_fp8/block_info.h"
+#include "decoding_attn_fp8/decoding_fp8.h"
+#include "decoding_attn_fp8/kernel_traits.h"
 
-template <typename KernelTraits, bool IsAlibi>
-__global__ void mha_decoding_fwd_kernel(const DecodingParams params) {
-    const DecodingBlockInfo binfo(params, blockIdx.x, blockIdx.y);
+template <typename KernelTraits, typename fp8_t, bool IsAlibi>
+__global__ void mha_decoding_fp8_fwd_kernel(const DecodingFP8Params<fp8_t> params) {
+    const DecodingFP8BlockInfo binfo(params, blockIdx.x, blockIdx.y);
     if (binfo.actual_seqlen_q != 1 || binfo.actual_seqlen_k == 0) {
         return;
     }
@@ -57,6 +57,7 @@ __global__ void mha_decoding_fwd_kernel(const DecodingParams params) {
          base_seqlen_k += groups_per_block) {
         size_t seqlen_k = base_seqlen_k + group_id;
         half RK[thread_elem_nums];
+        fp8_t RQK[thread_elem_nums];
 
         float tmp = 0.0;
         if (seqlen_k < binfo.actual_seqlen_k) {
@@ -69,7 +70,16 @@ __global__ void mha_decoding_fwd_kernel(const DecodingParams params) {
 
 #pragma unroll
             for (size_t i = 0; i < thread_elem_nums; ++i) {
-                tmp += (__half2float(RQ[i]) * __half2float(RK[i]));
+                RQK[i] = static_cast<fp8_t>(RK[i]);
+                tmp += (__half2float(RQ[i]) * static_cast<float>(RQK[i]));
+            }
+
+#pragma unroll
+            for (size_t i = 0; i < thread_iters; ++i) {
+                *(int2 *)(&params.k_fp8_ptr[binfo.k_offset(
+                    seqlen_k, params.k_row_stride, params.k_head_stride,
+                    (i * threads_per_group + group_lane_id) * thread_copy_elem_nums)]) =
+                    *(int2 *)(&RQK[i * thread_copy_elem_nums]);
             }
         }
 
@@ -155,6 +165,7 @@ __global__ void mha_decoding_fwd_kernel(const DecodingParams params) {
 
     // O = P * V
     half RV[thread_elem_nums];
+    fp8_t RQV[thread_elem_nums];
     float RO[thread_elem_nums];
 
     memset(RO, 0, sizeof(RO));
@@ -174,7 +185,16 @@ __global__ void mha_decoding_fwd_kernel(const DecodingParams params) {
 
 #pragma unroll
             for (size_t i = 0; i < thread_elem_nums; ++i) {
-                RO[i] += (S_smem[seqlen_k] * __half2float(RV[i]));
+                RQV[i] = static_cast<fp8_t>(RV[i]);
+                RO[i] += (S_smem[seqlen_k] * static_cast<float>(RQV[i]));
+            }
+
+#pragma unroll
+            for (size_t i = 0; i < thread_iters; ++i) {
+                *(int2 *)(&params.v_fp8_ptr[binfo.k_offset(
+                    seqlen_k, params.v_row_stride, params.v_head_stride,
+                    (i * threads_per_group + group_lane_id) * thread_copy_elem_nums)]) =
+                    *(int2 *)(&RQV[i * thread_copy_elem_nums]);
             }
         }
     }
