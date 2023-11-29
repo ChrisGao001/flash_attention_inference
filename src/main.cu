@@ -18,6 +18,7 @@ MHA_FUNC(flash_attn_v2);
 
 MHA_FUNC(decoding_attn);
 MHA_FUNC(decoding_attn_int8ph);
+MHA_FUNC(decoding_attn_int8pg);
 #ifdef FAI_ENABLE_FP8
 MHA_FUNC(decoding_attn_fp8e5m2);
 MHA_FUNC(decoding_attn_fp8e4m3);
@@ -111,6 +112,7 @@ int main(int argc, char *argv[]) {
     if (FLAGS_is_decoding) {
         tester.evaluate(decoding_attn, "Decoding-Attention");
         tester.evaluate(decoding_attn_int8ph, "Decoding-Attention-Int8-Per-Head");
+        tester.evaluate(decoding_attn_int8pg, "Decoding-Attention-Int8-Per-Group");
 #ifdef FAI_ENABLE_FP8
         tester.evaluate(decoding_attn_fp8e5m2, "Decoding-Attention-FP8E5M2");
         tester.evaluate(decoding_attn_fp8e4m3, "Decoding-Attention-FP8E4M3");

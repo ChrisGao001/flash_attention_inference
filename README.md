@@ -7,24 +7,24 @@ O = Softmax(Q * K^T) * V
 
 ![mha_prefill](./media/images/mha_prefill.png)
 
-## Decoding attention
+## Decoding Attention
 Decoding attention is specially optimized for multi head attention (MHA) using CUDA core for the decoding stage of LLM inference. It mainly refers to OpenPPL and Flash Attention, which can solve the problem of low tensor core utilization of Flash Attention in the decoding stage of LLM inference and support more types of attention and quantization optimization. The calculation expression is as follows, where the precision of tensor Q, K, V and O is FP16. In most LLM inference decoding scenarios, the performance of Decoding Attention is better than Flash Attention and Flash Attention v2. In addition, Decoding Attention also supports GQA / MQA and ALiBi inference scenarios.
 
 ![mha_decoding](./media/images/mha_decoding.png)
 
-## Decoding attention Quantization
+## Decoding Attention Quantization
 At the same time, various quantization methods were explored for KV cache in Decoding Attention, which can save nearly half of the GPU memory and reduce the cost of LLM inference. 
 
-### Int8 Quantization
+### KV Cache Int8 Quantization
 Usually, there are the following 4 types of int8 quantization schemes for KV cache:
 - Per Tensor: Uniform quantization of K or V of all tokens
 - Per Token: Uniform quantization of K or V of a certain token
 - Per Head: Uniform quantization of K or V of a certain head of a certain token
 - Per Group: Group quantization of K or V of a certain head of a certain token
 
-The Per Tensor solution has high GPU memory benefits, but the accuracy may drop significantly; the Per Group solution has high accuracy, but the scale storage capacity is large, and the GPU memory benefits are not high. Here, in order to take into account both quantization accuracy and memory gain, Per Head’s quantization scheme was chosen.
+The Per Tensor solution has high GPU memory benefits, but the accuracy may drop significantly; the Per Group solution has high accuracy, but the scale storage capacity is large, and the GPU memory benefits are not high. The quantization scheme of Per Head and Per Group is given here.
 
-### FP8 Quantization
+### KV Cache FP8 Quantization
 In addition, I also tried to use the quantization method of directly converting KV cache to FP8, including E5M2 and E4M3 formats. I found that the quantization accuracy of FP8 is better than that of int8, and there is no need to store additional scale, which means that the GPU memory benefit of FP8 will be greater big. The quantization and dequantization process of FP8 is also relatively elegant and can be integrated into Decoding Attention.
 
 # Support
@@ -32,7 +32,8 @@ In addition, I also tried to use the quantization method of directly converting 
 - Hybrid Inference: Hybrid inference by prefill and decoding
 - ALiBi Inference: Attention with linear biases inference
 - Decoding Attention: Self MHA of decoding stage with CUDA core
-- Decoding Attention Int8: Self MHA of decoding stage with CUDA core, and KV cache is quantized by int8 using per head method
+- Decoding Attention Int8 Per Head: Self MHA of decoding stage with CUDA core, and KV cache is quantized by int8 using Per Head method
+- Decoding Attention Int8 Per Group: Self MHA of decoding stage with CUDA core, and KV cache is quantized by int8 using Per Group method
 - Decoding Attention FP8E5M2: Self MHA of decoding stage with CUDA core, and KV cache is quantized by FP8 with E5M2
 - Decoding Attention FP8E4M3: Self MHA of decoding stage with CUDA core, and KV cache is quantized by FP8 with E4M3
 

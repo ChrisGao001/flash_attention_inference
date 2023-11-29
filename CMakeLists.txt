@@ -68,6 +68,7 @@ file (GLOB FAI_SRCS
     ${PROJECT_SOURCE_DIR}/src/flash_attn_v2/*.cu
     ${PROJECT_SOURCE_DIR}/src/decoding_attn/*.cu
     ${PROJECT_SOURCE_DIR}/src/decoding_attn_int8_per_head/*.cu
+    ${PROJECT_SOURCE_DIR}/src/decoding_attn_int8_per_group/*.cu
     ${PROJECT_SOURCE_DIR}/src/decoding_attn_fp8/*.cu
 )
 
